@@ -35,11 +35,12 @@ void buildSUFrame(unsigned char *frame, unsigned char address, unsigned char con
     frame[4] = FLAG;
 }
 
-void writeToSerialPort(unsigned char *frame , int timeout){
+void writeToSerialPort(unsigned char *frame , int timeout, int *nRetransmissions){
 
     writeBytesSerialPort(frame, SUFrame_SIZE);
     alarm(3);
     alarmEnabled = TRUE;
+    nRetransmissions--;
 
 }
 ////////////////////////////////////////////////
@@ -48,6 +49,8 @@ void writeToSerialPort(unsigned char *frame , int timeout){
 int llopen(LinkLayer connectionParameters)
 {
     int timeout = connectionParameters.timeout;
+    int nRetransmissions = connectionParameters.nRetransmissions;
+
     if (openSerialPort(connectionParameters.serialPort, connectionParameters.baudRate) < 0)
     {
         perror("openSerialPort");
@@ -63,7 +66,7 @@ int llopen(LinkLayer connectionParameters)
         enum State_UA state = START;
 
         setupAlarm();
-        writeToSerialPort(frameTx, timeout);
+        writeToSerialPort(frameTx, timeout, nRetransmissions);
 
         unsigned char byte;
         while(state != STOP){
@@ -95,7 +98,8 @@ int llopen(LinkLayer connectionParameters)
                 }
             }
             if( alarmEnabled == FALSE){
-                writeToSerialPort(frameTx,timeout); 
+                writeToSerialPort(frameTx,timeout, nRetransmissions); 
+
             } 
         }
         /*
