@@ -98,7 +98,11 @@ int llopen(LinkLayer connectionParameters)
                 writeToSerialPort(frameToSend); 
             } 
         }
-        // Conseguimos estabelecer conexão, agora é dizer isso ao apllication layer que ele chama o write
+        /*
+        Conseguimos estabelecer conexão
+        agora é dizer isso ao apllication layer 
+        que ele chama o write
+        */
     }
 
     return 0;
