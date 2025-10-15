@@ -35,12 +35,13 @@ void buildSUFrame(unsigned char *frame, unsigned char address, unsigned char con
     frame[4] = FLAG;
 }
 
-void writeToSerialPort(unsigned char *frame , int timeout, int *nRetransmissions){
+ writeToSerialPort(unsigned char *frame , int timeout, int *nRetransmissions){
 
     writeBytesSerialPort(frame, SUFrame_SIZE);
     alarm(3);
     alarmEnabled = TRUE;
     nRetransmissions--;
+
 
 }
 ////////////////////////////////////////////////
