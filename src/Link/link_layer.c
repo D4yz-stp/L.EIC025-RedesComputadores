@@ -35,7 +35,7 @@ void buildSUFrame(unsigned char *frame, unsigned char address, unsigned char con
     frame[4] = FLAG;
 }
 
-void writeToSerialPort(unsigned char *frame ){
+void writeToSerialPort(unsigned char *frame , int timeout){
 
     writeBytesSerialPort(frame, SUFrame_SIZE);
     alarm(3);
@@ -47,23 +47,23 @@ void writeToSerialPort(unsigned char *frame ){
 ////////////////////////////////////////////////
 int llopen(LinkLayer connectionParameters)
 {
+    int timeout = connectionParameters.timeout;
     if (openSerialPort(connectionParameters.serialPort, connectionParameters.baudRate) < 0)
     {
         perror("openSerialPort");
         exit(-1);
     }
-    unsigned char frameToSend[SUFrame_SIZE];
-    unsigned char frameToRecive[SUFrame_SIZE];
+    unsigned char frameTx[SUFrame_SIZE];
+    unsigned char frameRx[SUFrame_SIZE];
 
     if(connectionParameters.role == LlTx) {
         
-        buildSUFrame(frameToSend, A_TX, C_SET);
-        buildSUFrame(frameToRecive, A_RX, C_UA);
+        buildSUFrame(frameTx, A_TX, C_SET);
 
         enum State_UA state = START;
 
         setupAlarm();
-        writeToSerialPort(frameToSend);
+        writeToSerialPort(frameTx, timeout);
 
         unsigned char byte;
         while(state != STOP){
@@ -95,7 +95,7 @@ int llopen(LinkLayer connectionParameters)
                 }
             }
             if( alarmEnabled == FALSE){
-                writeToSerialPort(frameToSend); 
+                writeToSerialPort(frameTx,timeout); 
             } 
         }
         /*
@@ -103,6 +103,43 @@ int llopen(LinkLayer connectionParameters)
         agora é dizer isso ao apllication layer 
         que ele chama o write
         */
+    }
+    else if(connectionParameters.role == LlRx){
+        buildSUFrame(frameRx, A_RX, C_UA);
+        
+        enum State_UA state = START;
+
+        unsigned char byte;
+        while(state != STOP){
+            int bytes = readByteSerialPort(&byte);
+            if( bytes > 0){
+                switch(state){
+                    case START:
+                        if(byte == FLAG) {state = FLAG_RCV;}
+                        break;
+                    case FLAG_RCV:
+                        if(byte == FLAG) {state = FLAG;}
+                        else if (byte == A_TX) {state = A_RCV;}
+                        else {state = START;}
+                        break;
+                    case A_RCV:
+                        if(byte == FLAG) {state = FLAG;}
+                        else if (byte == C_SET) {state = C_RCV;}
+                        else {state = START;}
+                        break;
+                    case C_RCV:
+                        if(byte == FLAG) {state = FLAG;}
+                        else if (byte == (A_TX^C_SET)) {state = BCC1_OK;}
+                        else {state = START;}
+                        break;
+                    case BCC1_OK:
+                        if(byte == FLAG) {state = STOP;}
+                        else {state = START;}   
+                        break;
+                }
+            }
+        }
+        
     }
 
     return 0;
