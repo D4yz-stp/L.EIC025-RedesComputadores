@@ -1,23 +1,8 @@
 // Application layer protocol implementation
 
 #include "application_layer.h"
-
+#include "link_layer.h"
 #include <stdio.h>
-
-typedef struct
-{
-    char serialPort[50];
-    LinkLayerRole role;
-    int baudRate;
-    int nRetransmissions;
-    int timeout;
-} LinkLayer;
-typedef enum
-{
-    LlTx,
-    LlRx,
-} LinkLayerRole;
-
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
                       int nTries, int timeout, const char *filename)
