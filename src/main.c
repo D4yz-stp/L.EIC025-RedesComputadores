@@ -7,6 +7,9 @@
 
 #include "application_layer.h"
 
+#define FALSE 0;
+#define TRUE 1;
+
 #define N_TRIES 3
 #define TIMEOUT 4
 
