@@ -36,9 +36,11 @@ void buildSUFrame(unsigned char *frame, unsigned char address, unsigned char con
 }
 
 void writeToSerialPort(unsigned char *frame ){
+
     writeBytesSerialPort(frame, SUFrame_SIZE);
     alarm(3);
     alarmEnabled = TRUE;
+
 }
 ////////////////////////////////////////////////
 // LLOPEN
@@ -53,15 +55,15 @@ int llopen(LinkLayer connectionParameters)
     unsigned char frameToSend[SUFrame_SIZE];
     unsigned char frameToRecive[SUFrame_SIZE];
 
-    if(strcmp(connectionParameters.role == LlTx)) {
+    if(connectionParameters.role == LlTx) {
         
         buildSUFrame(frameToSend, A_TX, C_SET);
         buildSUFrame(frameToRecive, A_RX, C_UA);
 
         enum State_UA state = START;
 
-        writeToSerialPort(frameToSend);
         setupAlarm();
+        writeToSerialPort(frameToSend);
 
         unsigned char byte;
         while(state != STOP){
@@ -75,17 +77,21 @@ int llopen(LinkLayer connectionParameters)
                         if(byte == FLAG) {state = FLAG;}
                         else if (byte == A_RX) {state = A_RCV;}
                         else {state = START;}
+                        break;
                     case A_RCV:
                         if(byte == FLAG) {state = FLAG;}
                         else if (byte == C_UA) {state = C_RCV;}
                         else {state = START;}
+                        break;
                     case C_RCV:
                         if(byte == FLAG) {state = FLAG;}
                         else if (byte == (A_RX^C_UA)) {state = BCC1_OK;}
                         else {state = START;}
+                        break;
                     case BCC1_OK:
                         if(byte == FLAG) {state = STOP;}
                         else {state = START;}   
+                        break;
                 }
             }
             if( alarmEnabled == FALSE){
