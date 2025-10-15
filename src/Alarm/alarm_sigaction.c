@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include "alarm_sigaction.h"
 
-int alarmEnabled = 0;
+int alarmEnabled = FALSE;
 int alarmCount = 0;
 struct sigaction act = {0};
 
