@@ -36,8 +36,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
             printf("TX: Sending string of size %d...\n", len);
             
-            // O seu colega pediu para usar a base da ligação, agora chamamos llwrite
-            int bytes_written = llwrite((const unsigned char *)test_string, len);
+            
 
             printf("TX: llwrite finished. Bytes written: %d\n", bytes_written);
             
