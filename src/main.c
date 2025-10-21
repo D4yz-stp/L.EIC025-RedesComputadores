@@ -7,17 +7,8 @@
 
 #include "application_layer.h"
 
-#define FALSE 0;
-#define TRUE 1;
-
 #define N_TRIES 3
 #define TIMEOUT 4
-
-
-typedef struct main
-{
-    
-}RES_RET
 
 // Arguments:
 //   $1: /dev/ttySxx
