@@ -9,9 +9,8 @@
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
                       int nTries, int timeout, const char *filename)
 {
-    // A variável 'Text' já não é usada, pode ser removida (evita warning)
     
-    // CORREÇÃO: A lógica para determinar o role
+    // Determinação da role
     LinkLayerRole roleLink;
     roleLink = (strcmp(role, "tx") == 0) ? LlTx : LlRx;
     
@@ -21,17 +20,18 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         .nRetransmissions = nTries,
         .timeout = timeout
     };
+    
     strncpy(linkLayer.serialPort, serialPort, 50);
     linkLayer.serialPort[49] = '\0';
 
     int correct_Open = llopen(linkLayer);
     
     if (correct_Open == 0) {
-        // Ligação estabelecida (Handshake SET/UA concluído)
+        // Ligação estabelecida 
 
         if (roleLink == LlTx) {
-            // LÓGICA DO TRANSMISSOR: Enviar a string de teste
-            const char *test_string = "Ola mundo, esta e a minha primeira string enviada com I-Frame!";
+            // LÓGICA DO TRANSMISSOR
+            const char *test_string = "Ola mundo, Tu gostas de mandioca ?";
             int len = strlen(test_string);
 
             printf("TX: Sending string of size %d...\n", len);
@@ -45,7 +45,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             llclose();
         } 
         else {
-            // LÓGICA DO RECETOR: Esperar pelo I-Frame
+            // LÓGICA DO RECETOR
             unsigned char received_data[MAX_PAYLOAD_SIZE];
             
             printf("RX: Waiting for I-Frame...\n");
@@ -65,6 +65,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             llclose();
         }
     } else {
+        // Ligação não estabelecida
         printf("llopen FAILED for role %s\n", role);
     }
 }
