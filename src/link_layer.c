@@ -28,7 +28,7 @@
 
 // I-Frame Control Field (C) Values
 #define C_I0 0x00
-#define C_I1 0x40
+#define C_I1 0x80
 
 // Escape byte for byte stuffing
 #define ESC 0x7D
@@ -67,12 +67,15 @@ int buildIFrame(unsigned char *frame, const unsigned char *data, int dataSize)
     frame[idx++] = C_Field;
     frame[idx++] = A_TX ^ C_Field;
     
+    // Overflow Inspection
+    if (dataSize > MAX_PAYLOAD_SIZE) return -1;
+
     // Calculate BCC2
     unsigned char bcc2 = 0;
     for (int i = 0; i < dataSize; i++) {
         bcc2 ^= data[i];
     }
-    
+
     // Byte stuffing on payload + BCC2
     unsigned char tempBuffer[MAX_PAYLOAD_SIZE + 1];
     memcpy(tempBuffer, data, dataSize);
@@ -104,7 +107,11 @@ int writeToSerialPort(unsigned char *frame, int frameSize, int timeout, int *nRe
     }
     
     if (!alarmEnabled) {
-        writeBytesSerialPort(frame, frameSize);
+        int bytesWritten writeBytesSerialPort(frame, frameSize);
+        if (bytesWritten != frameSize) {
+            fprintf(stderr, "Erro: falha ao escrever frame (%d/%d bytes)\n", bytesWritten, frameSize);
+            return -1;
+        }
         printf("Frame sent. Waiting for response... (retransmissions left: %d)\n", *nRetransmissions);
         
         alarm(timeout);
@@ -162,7 +169,7 @@ int llopen(LinkLayer connectionParameters)
                             break;
                         case FLAG_RCV:
                             if (byte == FLAG) state = FLAG_RCV;
-                            else if (byte == A_TX) state = A_RCV;
+                            else if (byte == A_RX) state = A_RCV;
                             else state = START;
                             break;
                         case A_RCV:
@@ -172,7 +179,7 @@ int llopen(LinkLayer connectionParameters)
                             break;
                         case C_RCV:
                             if (byte == FLAG) state = FLAG_RCV;
-                            else if (byte == (A_TX ^ C_UA)) state = BCC1_OK;
+                            else if (byte == (A_RX ^ C_UA)) state = BCC1_OK;
                             else state = START;
                             break;
                         case BCC1_OK:
@@ -195,7 +202,7 @@ int llopen(LinkLayer connectionParameters)
             
             if (!alarmEnabled) {
                 nRetransmissions--;
-                printf("TX: Timeout! Retrying...\n");
+                printf("TX: Timeout or REJ! Retransmitting...\n");
             }
         }
         
@@ -243,7 +250,7 @@ int llopen(LinkLayer connectionParameters)
         printf("RX: SET received. Sending UA...\n");
         
         unsigned char frameTx[SUFrame_SIZE];
-        buildSUFrame(frameTx, A_TX, C_UA);
+        buildSUFrame(frameTx, A_RX, C_UA);
         
         if (writeBytesSerialPort(frameTx, SUFrame_SIZE) < 0) {
             perror("writeBytesSerialPort - UA");
@@ -264,6 +271,10 @@ int llwrite(const unsigned char *buf, int bufSize)
 {
     unsigned char frameTx[MAX_PAYLOAD_SIZE * 2 + 10];
     int frameSize = buildIFrame(frameTx, buf, bufSize);
+    if (frameSize < 0) {
+        fprintf(stderr, "Erro: buildIFrame falhou\n");
+        return -1;
+    }
     
     int nRetransmissions = 3;
     int timeout = 3;
@@ -275,6 +286,8 @@ int llwrite(const unsigned char *buf, int bufSize)
     alarmEnabled = FALSE;
     alarmCount = 0;
     
+    bool isREJ = false;
+
     while (nRetransmissions > 0) {
         writeToSerialPort(frameTx, frameSize, timeout, &nRetransmissions);
         printf("TX: I-Frame sent (Ns=%d). Waiting for RR... (retries left: %d)\n", Ns, nRetransmissions);
@@ -288,19 +301,24 @@ int llwrite(const unsigned char *buf, int bufSize)
                         break;
                     case FLAG_RCV:
                         if (byte == FLAG) state = FLAG_RCV;
-                        else if (byte == A_TX) state = A_RCV;
+                        else if (byte == A_RX) state = A_RCV;
                         else state = START;
                         break;
                     case A_RCV:
                         if (byte == FLAG) state = FLAG_RCV;
-                        else if (byte == expectedRR || byte == C_REJ0 || byte == C_REJ1) {
+                        else if (byte == expectedRR) {
+                            isREJ = FALSE;
+                            state = C_RCV;
+                        }
+                        else if (byte == C_REJ0 || byte == C_REJ1) {
+                            isREJ = TRUE;
                             state = C_RCV;
                         }
                         else state = START;
                         break;
                     case C_RCV:
                         if (byte == FLAG) state = FLAG_RCV;
-                        else if (byte == (A_TX ^ expectedRR)) {
+                        else if (byte == (A_RX ^ expectedRR)) {
                             state = BCC1_OK;
                         }
                         else state = START;
@@ -314,7 +332,15 @@ int llwrite(const unsigned char *buf, int bufSize)
                             Ns = 1 - Ns;
                             return frameSize;
                         }
-                        else state = START;
+                        else {
+                            if (isREJ) {
+                                printf("TX: Received REJ — retransmitting frame.\n");
+                                // force resending
+                                alarm(0);
+                                alarmEnabled = FALSE;
+                            }
+                            state = START;
+                        }
                         break;
                     case STOP:
                         break;
@@ -324,7 +350,9 @@ int llwrite(const unsigned char *buf, int bufSize)
         
         if (!alarmEnabled) {
             nRetransmissions--;
-            printf("TX: Timeout or REJ! Retransmitting...\n");
+            if (isREJ) printf("TX: REJ received — retransmitting frame.\n");
+            else printf("TX: Timeout — retransmitting frame.\n");
+            isREJ = FALSE;
         }
     }
     
@@ -341,7 +369,6 @@ int llread(unsigned char *packet)
     enum State_SU state = START;
     unsigned char byte;
 
-    // buffer para a data (payload) extraída do I-Frame´
     // Buffer to the payload (data) extracted into the I-Frame
     unsigned char dataBuffer[MAX_PAYLOAD_SIZE * 2];
     int dataIdx = 0;
@@ -374,9 +401,31 @@ int llread(unsigned char *packet)
                     if(byte == FLAG) {state = FLAG_RCV;}
                     else if (byte == (A_TX ^ currentC)) {
                         // Verification to see if its the awaited I-frame (C_I0 ou C_I1)
-                        if (currentC == expectedC || currentC == (1-expectedC)) {
+                        if (currentC == 0x00 || currentC == 0x80) {
+                            if (currentC != expectedC) {
+                                // Duplicated Frame
+                                printf("RX: Duplicate frame detected (got %s, expected %s)\n",
+                                    currentC == 0x00 ? "I0" : "I1",
+                                    expectedC == 0x00 ? "I0" : "I1");
+                                
+                                // RR sent to confirm what is already expect
+                                unsigned char rrFrame[SUFrame_SIZE];
+                                unsigned char rrControl = (Nr == 0) ? C_RR1 : C_RR0;
+                                buildSUFrame(rrFrame, A_RX, rrControl);
+                                int bytesWritten = writeBytesSerialPort(rrFrame, SUFrame_SIZE);
+                                if (bytesWritten != frameSize) {
+                                    fprintf(stderr, "Erro: falha ao escrever frame (%d/%d bytes)\n", bytesWritten, frameSize);
+                                    return -1;
+                                }
+
+                                // Discard the duplicated Frame
+                                state = START;
+                                dataIdx = 0;
+                                break;
+                            }
+                            
+                            // Expected Frame
                             state = BCC1_OK;
-                            // If its duplicated, we process and send RR
                         } else {
                             state = START;
                         }
@@ -399,27 +448,37 @@ int llread(unsigned char *packet)
                             calculatedBCC2 ^= dataBuffer[i];
                         }
                         
-                        if (receivedBCC2 == calculatedBCC2 && currentC == expectedC) {
+                        if (receivedBCC2 == calculatedBCC2) {
                             // Valid data
                             memcpy(packet, dataBuffer, dataIdx);
                             
                             unsigned char rrFrame[SUFrame_SIZE];
                             unsigned char rrControl = (Nr == 0) ? C_RR1 : C_RR0;
                             
-                            buildSUFrame(rrFrame, A_TX, rrControl);
-                            writeBytesSerialPort(rrFrame, SUFrame_SIZE);
+                            buildSUFrame(rrFrame, A_RX, rrControl);
+                            int bytesWritten = writeBytesSerialPort(rrFrame, SUFrame_SIZE);
+                            if (bytesWritten != frameSize) {
+                                fprintf(stderr, "Erro: falha ao escrever frame (%d/%d bytes)\n", bytesWritten, frameSize);
+                                return -1;
+                            }
                             
                             printf("RX: I-Frame received (Nr=%d). Sent RR%d.\n", Nr, 1 - Nr);
-                            Nr = 1 - Nr;
+                            Nr = (Nr == 0) ? 1:0;
                             return dataIdx;
                         } else {
                             unsigned char rejFrame[SUFrame_SIZE];
                             unsigned char rejControl = (Nr == 0) ? C_REJ0 : C_REJ1;
-                            buildSUFrame(rejFrame, A_TX, rejControl);
-                            writeBytesSerialPort(rejFrame, SUFrame_SIZE);
+                            buildSUFrame(rejFrame, A_RX, rejControl);
+                            int bytesWritten = writeBytesSerialPort(rejFrame, SUFrame_SIZE);
+                            if (bytesWritten != frameSize) {
+                                fprintf(stderr, "Erro: falha ao escrever frame (%d/%d bytes)\n", bytesWritten, frameSize);
+                                return -1;
+                            }
                             
                             printf("RX: Frame error. Sent REJ%d.\n", Nr);
+                            
                             dataIdx = 0;
+                            escaped = 0;
                             state = START;
                         }
                     }
@@ -431,12 +490,14 @@ int llread(unsigned char *packet)
                             dataBuffer[dataIdx++] = byte ^ 0x20;
                             escaped = 0;
                         } else {
-                            if (dataIdx < MAX_PAYLOAD_SIZE) {
+
+                            if (dataIdx < MAX_PAYLOAD_SIZE * 2) {
                                 dataBuffer[dataIdx++] = byte;
                             } else {
                                 // Buffer overflow, Frame discarded
                                 printf("RX: Data buffer overflow. Restarting.\n");
                                 dataIdx = 0;
+                                escaped = 0;
                                 state = START;
                             }
                         }
