@@ -107,7 +107,7 @@ int writeToSerialPort(unsigned char *frame, int frameSize, int timeout, int *nRe
     }
     
     if (!alarmEnabled) {
-        int bytesWritten writeBytesSerialPort(frame, frameSize);
+        int bytesWritten = writeBytesSerialPort(frame, frameSize);
         if (bytesWritten != frameSize) {
             fprintf(stderr, "Erro: falha ao escrever frame (%d/%d bytes)\n", bytesWritten, frameSize);
             return -1;
