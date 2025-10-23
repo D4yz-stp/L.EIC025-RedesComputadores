@@ -4,13 +4,12 @@
 #include "link_layer.h"
 #include <stdio.h>
 #include <string.h>
-#include <stdlib.h> // Para strlen
+#include <stdlib.h> // strlen
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
                       int nTries, int timeout, const char *filename)
 {
-    
-    // Determinação da role
+    // Determination of the Role
     LinkLayerRole roleLink;
     roleLink = (strcmp(role, "tx") == 0) ? LlTx : LlRx;
     
@@ -26,11 +25,11 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
     int correct_Open = llopen(linkLayer);
     
-    if (correct_Open == 0) {
-        // Ligação estabelecida 
+    if (correct_Open != -1) {
+        // Connection established
 
         if (roleLink == LlTx) {
-            // LÓGICA DO TRANSMISSOR
+            // TRANSMITTER LOGIC
             const char *test_string = "Ola mundo, Tu gostas de mandioca ?";
             int len = strlen(test_string);
 
@@ -41,16 +40,15 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
             printf("TX: llwrite finished. Bytes written: %d\n", bytes_written);
             
-            // Fechar a ligação
+            // To Finish the connection
             llclose();
         } 
         else {
-            // LÓGICA DO RECETOR
+            // RECEIVER LOGIC
             unsigned char received_data[MAX_PAYLOAD_SIZE];
             
             printf("RX: Waiting for I-Frame...\n");
             
-            // llread irá bloquear até receber um I-Frame (ou falhar)
             int bytes_read = llread(received_data);
 
             if (bytes_read > 0) {

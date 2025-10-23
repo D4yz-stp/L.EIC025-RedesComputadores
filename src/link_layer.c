@@ -182,6 +182,7 @@ int llopen(LinkLayer connectionParameters)
                                 alarmEnabled = FALSE;
                                 printf("TX: UA received. Connection established.\n");
                                 Ns = 0;
+                                printf(" \n fd do tx - >\"%d\" \n",fd);
                                 return fd;
                             }
                             else state = START;
@@ -250,6 +251,7 @@ int llopen(LinkLayer connectionParameters)
         }
         
         Nr = 0;
+        printf(" \n fd do rx - >\"%d\" \n",fd);
         return fd;
     }
 }
@@ -350,7 +352,8 @@ int llread(unsigned char *packet)
     int escaped = 0;
     
     while (state != STOP) {
-        if (readByteSerialPort(&byte) > 0) {
+        int isSuccess = readByteSerialPort(&byte);
+        if (isSuccess > 0) {
             switch(state) {
                 case START:
                     if (byte == FLAG) state = FLAG_RCV;
