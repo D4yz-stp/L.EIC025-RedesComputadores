@@ -589,9 +589,14 @@ int llclose()
                                 buildSUFrame( UAFrame, A_TX, C_UA);
                                 writeBytesSerialPort( UAFrame, SUFrame_SIZE);
                                 
-                                close(fd);
-
-                                printf("Tx: Connection terminated\n");
+                                int isClosed = closeSerialPort();
+                                if (isClosed == 0){
+                                    printf("Tx: Connection terminated\n");
+                                }
+                                else{
+                                    perror("Error closing SerialPort on Tx");
+                                    return -1;
+                                }
 
                                 return 0;
                             }
@@ -698,9 +703,15 @@ int llclose()
 
         printf("RX: UA received. Terminating the connection...\n");
 
-        close(fd);
+        int isClosed = closeSerialPort();
+        if (isClosed == 0){
+            printf("Tx: Connection terminated\n");
+        }
+        else{
+            perror("Error closing SerialPort on Tx");
+            return -1;
+        }
 
-        
         return 0;
     }
 
