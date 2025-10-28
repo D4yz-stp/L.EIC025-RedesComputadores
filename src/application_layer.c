@@ -239,7 +239,8 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                                     It should create the file with the filename 
                                     or Destroy the existing file with the filename and have a brand file named filename
                                 */
-                                file = fopen(filename, "wb");
+                               char fullPath[260] = "src/";
+                                file = fopen(strcat(fullPath,filename), "wb");
                                 if (!file) {
                                     perror("fopen");
                                     error = TRUE;
