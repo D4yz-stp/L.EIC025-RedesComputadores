@@ -44,7 +44,7 @@ int buildDataPacket(unsigned char *packet, unsigned char *data, int dataSize) {
     /*
         Data
     */
-    memcpy(&packet[3], &data, dataSize);
+    memcpy(&packet[3], data, dataSize);
     
     return 3 + dataSize; 
 }
