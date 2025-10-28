@@ -343,7 +343,7 @@ int llwrite(const unsigned char *buf, int bufSize)
                             alarmEnabled = FALSE;
                             printf("TX: RR received. Frame acknowledged.\n");
                             Ns = 1 - Ns;
-                            return frameSize;
+                            return bufSize;
                         }
                         else {
                             if (isREJ) {

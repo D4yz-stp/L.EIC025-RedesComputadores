@@ -29,7 +29,7 @@ int buildControlPacket( unsigned char *packet, unsigned char controlType, const 
 
     packet[index++] = T_FILE_NAME;
     packet[index++] = strlen(filename);
-    memcpy(&packet[index], &filename, strlen(filename));
+    memcpy(&packet[index], filename, strlen(filename));
     index += strlen(filename);
 
     return index;
@@ -212,6 +212,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                 
                 switch (C) {
                     case C_START:
+                        
                         /*
                             Start Control Packet
                         */
@@ -253,7 +254,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                             index += L;
                         }
                         break;
-
+                        
                     case C_DATA:  
                         /*
                             Data Packet
