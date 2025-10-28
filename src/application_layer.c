@@ -16,7 +16,7 @@
 #define T_FILE_SIZE 0
 #define T_FILE_NAME 1
 
-int buildControlPacket( unsigned char *packet, unsigned char controlType, char *filename, long long fileSize)
+int buildControlPacket( unsigned char *packet, unsigned char controlType, const char *filename, long long fileSize)
 {
     int index = 0;
 
@@ -24,12 +24,12 @@ int buildControlPacket( unsigned char *packet, unsigned char controlType, char *
 
     packet[index++] = T_FILE_SIZE;
     packet[index++] = 8;
-    memcpy(packet[index], fileSize, 8);
+    memcpy(&packet[index], &fileSize, 8);
     index += 8;
 
     packet[index++] = T_FILE_NAME;
     packet[index++] = strlen(filename);
-    memcpy(packet[index], filename, strlen(filename));
+    memcpy(&packet[index], &filename, strlen(filename));
     index += strlen(filename);
 
     return index;
@@ -44,7 +44,7 @@ int buildDataPacket(unsigned char *packet, unsigned char *data, int dataSize) {
     /*
         Data
     */
-    memcpy(&packet[3], data, dataSize);
+    memcpy(&packet[3], &data, dataSize);
     
     return 3 + dataSize; 
 }
@@ -81,17 +81,15 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
            FILE *file = fopen(filename, "rb");
             if (!file) {
                 perror("fopen");
-                return -1;
+                return;
             }
             /*
                 File Size assignment
             */
             struct stat st;
-            char fullpath[259];
-            strcpy(fullpath, "../");
-            if (stat(strcat(fullpath,filename), &st) != 0){
+            if (stat(filename, &st) != 0){
                 perror("Error getting the size of the filename\n");
-                return -1;
+                return;
             }
             long long int fileSize = st.st_size;
 
@@ -112,7 +110,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                 if(fclose(file) < 0){
                     perror("TX: Closing File in Start Control Packet");
                 }
-                return -1;
+                return;
             }
             printf("TX: Start Control Packet sent\n");
 
@@ -140,7 +138,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
                 packetSize = buildDataPacket(packet, fileBuffer, bytesRead);
 
-                int isWriten = llwrite(packet, packetSize);
+                isWriten = llwrite(packet, packetSize);
                 if( isWriten < 0){
                     printf("TX: Error in writing DATA\n");
                     error = TRUE;
@@ -159,7 +157,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                 if(llclose() < 0){
                     printf("TX: Error on llclose in Data Transfer handler error\n");
                 }
-                return -1;
+                return;
             }
             
             // Verify all bytes were sent
@@ -171,7 +169,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             */
 
             packetSize =  buildControlPacket(packet, C_END, filename, bytesSum);
-            int isWriten = llwrite(packet, packetSize);
+            isWriten = llwrite(packet, packetSize);
             if ( isWriten < 0 ){
                 printf("TX: Error in the llwrite End\n");
                 error = TRUE;
@@ -181,7 +179,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             fclose(file);
             if (llclose() < 0) {
                 printf("ERROR: Failed to close connection\n");
-                return -1;
+                return;
             }
             printf("TX: Connection closed\n");
 
@@ -234,7 +232,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                                 /*
                                     File Name
                                 */
-                                memcpy(filename, &packet[index], L);
+                                memcpy(&filename, &packet[index], L);
                                 filename[L] = '\0';
                                 printf("RX: File name is \"%s\"\n", filename);
                                 /*
@@ -305,7 +303,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                                 memcpy(&endFileSize, &packet[index], L);
                             }
                             else if (T == T_FILE_NAME) {
-                                memcpy( endFilename, &packet[index], L);
+                                memcpy(&endFilename, &packet[index], L);
                                 endFilename[L] = '\0';
                             }
                             index += L;
@@ -317,7 +315,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                             printf("RX: ERROR -> END file size (%lld) != START file size (%lld)\n", endFileSize, fileSize);
                             error = TRUE;
                         } 
-                        else if( endFilename != filename){
+                        else if(strcmp(endFilename, filename) != 0){
                             printf("RX: ERROR -> END filename != START filename\n");
                             error = TRUE;   
                         }
@@ -332,7 +330,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                         transferComplete = TRUE; 
                         if (llclose() < 0) {
                             printf("ERROR: Failed to close connection\n");
-                            return -1;
+                            return;
                         }
                         printf("TX: Connection closed\n");
                         break;
