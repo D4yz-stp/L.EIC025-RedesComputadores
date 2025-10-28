@@ -70,75 +70,130 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     linkLayer.serialPort[49] = '\0';
 
     int correct_Open = llopen(linkLayer);
-
-    // File Size assignment
-    struct stat st;
-    if (stat(strcat( "..",filename), &st) != 0){
-        perror("Error getting the size of the filename\n");
-        return -1;
-    }
-
-    long fileSize = st.st_size;
     
     if (correct_Open != -1) {
         // Connection established
 
         if (roleLink == LlTx) {
-
-            unsigned char packet[MAX_PAYLOAD_SIZE];
-            FILE *file = NULL;
-            long long int fileSize = 0;
-            long long int bytesReceived = 0; // Not kinda needed - Optional
-            int sequenceNumber = 0; // Not really needed - Optional
-            bool isFileSended = false;  
-            bool error = false;    
-
-
-            // Control Packet (START)
-            int index = 0;
-
-            // Control filed
-            controlPacket[index++] = 1;
-
-            // TLV Fileds
-            // File Size
-            controlPacket[index++] = 0;
-            controlPacket[index++] = 8; // 8 bytes
-            memcpy(&controlPacket[index], &fileSize, 8);
-            index += 8;
-
-            // File Name
-            controlPacket[index++] = 1;
-            controlPacket[index++] = strlen(filename);
-            memcpy(&controlPacket[index], filename, strlen(filename));
-            index += strlen(filename);
-
-            printf("TX: Sending the Start Control Packet\n");
-            int isWritten = llwrite(controlPacket, index);
-            if ( isWritten <= 0){
+            /*
+                Opening the File
+            */
+           FILE *file = fopen(filename, "rb");
+            if (!file) {
+                perror("fopen");
                 return -1;
             }
+            /*
+                File Size assignment
+            */
+            struct stat st;
+            char fullpath[259];
+            strcpy(fullpath, "../");
+            if (stat(strcat(fullpath,filename), &st) != 0){
+                perror("Error getting the size of the filename\n");
+                return -1;
+            }
+            long long int fileSize = st.st_size;
 
+            unsigned char packet[MAX_PAYLOAD_SIZE];
+            unsigned char fileBuffer[MAX_PAYLOAD_SIZE - 3]; // Without C , L1 , L2
+            long long int bytesSum = 0;
+            int sequenceNumber = 0; // Not really needed - Optional
+            bool error = FALSE;    
+            int packetSize;
 
+            /*
+                Start Control Packet
+            */
+            packetSize =  buildControlPacket(packet, C_START, filename, fileSize);
+            int isWriten = llwrite(packet, packetSize);
+            if ( isWriten < 0 ){
+                printf("TX: Error in the llwrite Start\n");
+                if(fclose(file) < 0){
+                    perror("TX: Closing File in Start Control Packet");
+                }
+                return -1;
+            }
+            printf("TX: Start Control Packet sent\n");
 
-            printf("TX: Sending string of size %d...\n", len);
+            /*
+                Data packets
+            */
+            printf("\nTX: Starting file transfer...\n");
+
+            while(!error){
+                int bytesRead = fread(fileBuffer, 1, sizeof(fileBuffer), file);
+                
+                if ( bytesRead <= 0 ){
+                    if (feof(file)) {
+                        printf("TX: End of file reached\n");
+                        break;
+                    } else {
+                        perror("fread");
+                        error = TRUE;
+                        break;
+                    }
+                }
+
+                bytesSum+= bytesRead;
+                sequenceNumber++;
+
+                packetSize = buildDataPacket(packet, fileBuffer, bytesRead);
+
+                int isWriten = llwrite(packet, packetSize);
+                if( isWriten < 0){
+                    printf("TX: Error in writing DATA\n");
+                    error = TRUE;
+                    break;
+                }
+
+                printf("TX: Progress: %lld/%lld bytes (%.1f%%)\n", bytesSum, fileSize, (bytesSum * 100.0) / fileSize);
+            }
+
+            // Check for errors
+            if (error) {
+                printf("\nTX: ERROR - File transfer failed\n");
+                if(fclose(file) < 0){
+                    perror("TX: Closing File in Start Control Packet");
+                }
+                if(llclose() < 0){
+                    printf("TX: Error on llclose in Data Transfer handler error\n");
+                }
+                return -1;
+            }
             
-            
-            int bytes_written = llwrite((const unsigned char *)test_string, len);
+            // Verify all bytes were sent
+            if (bytesSum != fileSize) {
+                printf("TX: WARNING -> Bytes sent (%lld) != file size (%lld)\n", bytesSum, fileSize);
+            }
+            /*
+                End Control Packet
+            */
 
-            printf("TX: llwrite finished. Bytes written: %d\n", bytes_written);
-            
-            // To Finish the connection
-            llclose();
+            packetSize =  buildControlPacket(packet, C_END, filename, bytesSum);
+            int isWriten = llwrite(packet, packetSize);
+            if ( isWriten < 0 ){
+                printf("TX: Error in the llwrite End\n");
+                error = TRUE;
+            }
+            printf("TX: End Control Packet sent\n");
+
+            fclose(file);
+            if (llclose() < 0) {
+                printf("ERROR: Failed to close connection\n");
+                return -1;
+            }
+            printf("TX: Connection closed\n");
+
         } 
         else {
             unsigned char packet[MAX_PAYLOAD_SIZE];
             FILE *file = NULL;
             long long int fileSize = 0;
-            long long int bytesReceived = 0; // Not kinda needed - Optional
+            long long int bytesReceived = 0; 
             int sequenceNumber = 0; // Not really needed - Optional
-            bool transferComplete = false;  
-            bool error = false;    
+            bool transferComplete = FALSE;  
+            bool error = FALSE;    
             char filename[256] = {0};       
 
             /*
@@ -150,7 +205,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                 int bytesRead = llread(packet);
                 if (bytesRead < 0) {
                     printf("RX: ERROR -> llread failed\n");
-                    error = true;
+                    error = TRUE;
                     break;
                 }
                 
@@ -189,7 +244,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                                 file = fopen(filename, "wb");
                                 if (!file) {
                                     perror("fopen");
-                                    error = true;
+                                    error = TRUE;
                                     break;
                                 }
                             }
@@ -208,7 +263,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                         
                         if (!file) {
                             printf("RX: ERROR -> Received DATA before START!\n");
-                            error = true;
+                            error = TRUE;
                             break;
                         }
                         /*
@@ -221,7 +276,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                         size_t written = fwrite(&packet[3], 1, K, file);
                         if (written != K) {
                             printf("RX: ERROR ->  Failed to write data to file\n");
-                            error = true;
+                            error = TRUE;
                             break;
                         }
                         bytesReceived += K;
@@ -260,26 +315,31 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                         */
                         if (endFileSize != fileSize) {
                             printf("RX: ERROR -> END file size (%lld) != START file size (%lld)\n", endFileSize, fileSize);
-                            error = true;
+                            error = TRUE;
                         } 
                         else if( endFilename != filename){
                             printf("RX: ERROR -> END filename != START filename\n");
-                            error = true;   
+                            error = TRUE;   
                         }
                         else if (bytesReceived != fileSize) {
                             printf("RX: ERROR -> Bytes received (%lld) != expected (%lld)\n", bytesReceived, fileSize);
-                            error = true;
+                            error = TRUE;
                         } 
                         printf("RX: File donwloaded with sucess");
                         printf("RX: Total bytes: %lld\n", bytesReceived);
                         printf("RX: Data packets: %d\n", sequenceNumber);
 
-                        transferComplete = true; 
+                        transferComplete = TRUE; 
+                        if (llclose() < 0) {
+                            printf("ERROR: Failed to close connection\n");
+                            return -1;
+                        }
+                        printf("TX: Connection closed\n");
                         break;
                         
                     default:
                         printf("RX: ERROR -> Unknown packet type: \"%d\"\n", C);
-                        error = true;
+                        error = TRUE;
                         break;
                 }
             }
