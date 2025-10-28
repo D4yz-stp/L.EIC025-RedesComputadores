@@ -8,6 +8,48 @@
 #include <sys/stat.h>
 #include <stdbool.h>
 
+// Control packet types
+#define C_START 1
+#define C_DATA  2
+#define C_END   3
+
+#define T_FILE_SIZE 0
+#define T_FILE_NAME 1
+
+int buildControlPacket( unsigned char *packet, unsigned char controlType, char *filename, long long fileSize)
+{
+    int index = 0;
+
+    packet[index++] = controlType;
+
+    packet[index++] = T_FILE_SIZE;
+    packet[index++] = 8;
+    memcpy(packet[index], fileSize, 8);
+    index += 8;
+
+    packet[index++] = T_FILE_NAME;
+    packet[index++] = strlen(filename);
+    memcpy(packet[index], filename, strlen(filename));
+    index += strlen(filename);
+
+    return index;
+
+}
+
+int buildDataPacket(unsigned char *packet, unsigned char *data, int dataSize) {
+    packet[0] = C_DATA;
+
+    packet[1] = dataSize / 256;  // L2 MSB
+    packet[2] = dataSize % 256;  // L1 LSB
+    /*
+        Data
+    */
+    memcpy(&packet[3], data, dataSize);
+    
+    return 3 + dataSize; 
+}
+
+
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
                       int nTries, int timeout, const char *filename)
 {
@@ -42,8 +84,17 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         // Connection established
 
         if (roleLink == LlTx) {
+
+            unsigned char packet[MAX_PAYLOAD_SIZE];
+            FILE *file = NULL;
+            long long int fileSize = 0;
+            long long int bytesReceived = 0; // Not kinda needed - Optional
+            int sequenceNumber = 0; // Not really needed - Optional
+            bool isFileSended = false;  
+            bool error = false;    
+
+
             // Control Packet (START)
-            unsigned char controlPacket[MAX_PAYLOAD_SIZE];
             int index = 0;
 
             // Control filed
@@ -87,7 +138,8 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             long long int bytesReceived = 0; // Not kinda needed - Optional
             int sequenceNumber = 0; // Not really needed - Optional
             bool transferComplete = false;  
-            bool error = false;           
+            bool error = false;    
+            char filename[256] = {0};       
 
             /*
                 We keep reading packets till the end pakcet or an error
@@ -106,7 +158,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                 printf("Rx: Received packet type: %d\n", C);
                 
                 switch (C) {
-                    case 1:
+                    case C_START:
                         /*
                             Start Control Packet
                         */
@@ -116,18 +168,17 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                             unsigned char T = packet[index++];
                             unsigned char L = packet[index++];
                             
-                            if (T == 0) { 
+                            if (T == T_FILE_SIZE) { 
                                 /*
                                 File Size
                                 */
                                 memcpy(&fileSize, &packet[index], L);
                                 printf("    File size: %lld bytes\n", fileSize);
                             } 
-                            else if (T == 1) {
+                            else if (T == T_FILE_NAME) {
                                 /*
                                     File Name
                                 */
-                                char filename[256] = {0};
                                 memcpy(filename, &packet[index], L);
                                 filename[L] = '\0';
                                 printf("RX: File name is \"%s\"\n", filename);
@@ -149,7 +200,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                         }
                         break;
 
-                    case 2:  
+                    case C_DATA:  
                         /*
                             Data Packet
                         */
@@ -182,7 +233,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                         printf("RX: Progress: %lld/%lld (%.1f%%)\n", bytesReceived, fileSize, (bytesReceived * 100.0) / fileSize);
                         break;
                 
-                    case 3:  
+                    case C_END:  
                          /*
                             End Control Packet
                         */
@@ -190,12 +241,17 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
                         index = 1;
                         long long int endFileSize = 0;
+                        char endFilename[256] = {0};
                         while (index < bytesRead) {
                             unsigned char T = packet[index++];
                             unsigned char L = packet[index++];
                             
-                            if (T == 0) {
+                            if (T == T_FILE_SIZE) {
                                 memcpy(&endFileSize, &packet[index], L);
+                            }
+                            else if (T == T_FILE_NAME) {
+                                memcpy( endFilename, &packet[index], L);
+                                endFilename[L] = '\0';
                             }
                             index += L;
                         }
@@ -206,6 +262,10 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                             printf("RX: ERROR -> END file size (%lld) != START file size (%lld)\n", endFileSize, fileSize);
                             error = true;
                         } 
+                        else if( endFilename != filename){
+                            printf("RX: ERROR -> END filename != START filename\n");
+                            error = true;   
+                        }
                         else if (bytesReceived != fileSize) {
                             printf("RX: ERROR -> Bytes received (%lld) != expected (%lld)\n", bytesReceived, fileSize);
                             error = true;
