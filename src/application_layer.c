@@ -103,7 +103,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             /*
                 Start Control Packet
             */
-            packetSize =  buildControlPacket(packet, C_START, filename, fileSize);
+            packetSize =  buildControlPacket(packet, C_START, "penguin-received.gif", fileSize);
             int isWriten = llwrite(packet, packetSize);
             if ( isWriten < 0 ){
                 printf("TX: Error in the llwrite Start\n");
@@ -168,7 +168,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                 End Control Packet
             */
 
-            packetSize =  buildControlPacket(packet, C_END, filename, bytesSum);
+            packetSize =  buildControlPacket(packet, C_END, "penguin-received.gif", bytesSum);
             isWriten = llwrite(packet, packetSize);
             if ( isWriten < 0 ){
                 printf("TX: Error in the llwrite End\n");
@@ -192,7 +192,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             int sequenceNumber = 0; // Not really needed - Optional
             bool transferComplete = FALSE;  
             bool error = FALSE;    
-            char filename[256] = {0};       
+            char rxfilename[256] = {0};       
 
             /*
                 We keep reading packets till the end pakcet or an error
@@ -233,15 +233,14 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                                 /*
                                     File Name
                                 */
-                                memcpy(&filename, &packet[index], L);
-                                filename[L] = '\0';
-                                printf("RX: File name is \"%s\"\n", filename);
+                                memcpy(&rxfilename, &packet[index], L);
+                                rxfilename[L] = '\0';
+                                printf("RX: File name is \"%s\"\n", rxfilename);
                                 /*
-                                    It should create the file with the filename 
-                                    or Destroy the existing file with the filename and have a brand file named filename
+                                    It should create the file with the rxfilename 
+                                    or Destroy the existing file with the rxfilename and have a brand file named rxfilename
                                 */
-                               char fullPath[260] = "src/";
-                                file = fopen(strcat(fullPath,filename), "wb");
+                                file = fopen(rxfilename, "wb");
                                 if (!file) {
                                     perror("fopen");
                                     error = TRUE;
@@ -296,7 +295,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
                         index = 1;
                         long long int endFileSize = 0;
-                        char endFilename[256] = {0};
+                        char endrxfilename[256] = {0};
                         while (index < bytesRead) {
                             unsigned char T = packet[index++];
                             unsigned char L = packet[index++];
@@ -305,8 +304,8 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                                 memcpy(&endFileSize, &packet[index], L);
                             }
                             else if (T == T_FILE_NAME) {
-                                memcpy(&endFilename, &packet[index], L);
-                                endFilename[L] = '\0';
+                                memcpy(&endrxfilename, &packet[index], L);
+                                endrxfilename[L] = '\0';
                             }
                             index += L;
                         }
@@ -317,24 +316,30 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                             printf("RX: ERROR -> END file size (%lld) != START file size (%lld)\n", endFileSize, fileSize);
                             error = TRUE;
                         } 
-                        else if(strcmp(endFilename, filename) != 0){
-                            printf("RX: ERROR -> END filename != START filename\n");
+                        else if(strcmp(endrxfilename, filename) != 0){
+                            printf("RX: ERROR -> END filename != filename\n");
+                            error = TRUE;   
+                        }
+                        else if(strcmp(rxfilename, filename) != 0){
+                            printf("RX: ERROR -> START filename != filename\n");
                             error = TRUE;   
                         }
                         else if (bytesReceived != fileSize) {
                             printf("RX: ERROR -> Bytes received (%lld) != expected (%lld)\n", bytesReceived, fileSize);
                             error = TRUE;
                         } 
-                        printf("RX: File donwloaded with sucess");
+                        printf("\n========================================\n\n");
+                        printf("RX: File donwloaded with sucess\n");
                         printf("RX: Total bytes: %lld\n", bytesReceived);
                         printf("RX: Data packets: %d\n", sequenceNumber);
+                        printf("\n========================================\n\n");
 
                         transferComplete = TRUE; 
                         if (llclose() < 0) {
                             printf("ERROR: Failed to close connection\n");
                             return;
                         }
-                        printf("TX: Connection closed\n");
+                        printf("RX: Connection closed\n");
                         break;
                         
                     default:

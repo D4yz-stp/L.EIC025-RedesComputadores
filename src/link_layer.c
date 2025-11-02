@@ -45,9 +45,21 @@ static LinkLayerRole globalRole;
 static int globalTimeout;
 static int globalNRetransmissions;
 
+/*
+    State machine for both S/U Frames and I-Frames
 
-// State machine
-enum State_SU{START, FLAG_RCV, A_RCV, C_RCV, BCC1_OK, STOP};
+    For S/U Frames (SET, UA, DISC, RR, REJ):
+    START → FLAG_RCV → A_RCV → C_RCV → BCC1_OK → STOP
+    Structure: F | A | C | BCC1 | F
+    For I-Frames (Information frames with payload):
+    START → FLAG_RCV → A_RCV → C_RCV → BCC1_OK → STOP
+    Structure: F | A | C | BCC1 | DATA | BCC2 | F
+    Note: BCC1_OK state handles both BCC1 validation AND data reception (payload + BCC2)
+    When receiving data, the state remains in BCC1_OK until the closing FLAG is found,
+    processing each byte (with destuffing) and accumulating it in the data buffer.
+*/
+enum State{START, FLAG_RCV, A_RCV, C_RCV, BCC1_OK, STOP};
+
 
 //===============================================
 // BUILD FRAMES
@@ -107,7 +119,7 @@ int buildIFrame(unsigned char *frame, const unsigned char *data, int dataSize)
 
 int writeToSerialPort(unsigned char *frame, int frameSize, int timeout, int *nRetransmissions)
 {
-    if (*nRetransmissions <= 0) {
+    if (*nRetransmissions < 0) {
         printf("ERROR: Maximum retransmissions reached.\n");
         return -1;
     }
@@ -129,6 +141,18 @@ int writeToSerialPort(unsigned char *frame, int frameSize, int timeout, int *nRe
     }
     
     return 0;
+}
+
+//===============================================
+// Calcula o BCC2
+//===============================================
+
+unsigned char calculateBCC2(const unsigned char *data, int dataSize) {
+    unsigned char bcc2 = 0;
+    for (int i = 0; i < dataSize; i++) {
+        bcc2 ^= data[i];
+    }
+    return bcc2;
 }
 
 //===============================================
@@ -160,16 +184,16 @@ int llopen(LinkLayer connectionParameters)
         unsigned char setFrame[SUFrame_SIZE];
         buildSUFrame(setFrame, A_TX, C_SET);
         
-        int nRetransmissions = connectionParameters.nRetransmissions;
+        int nRetransmissions = connectionParameters.nRetransmissions -1;
         int timeout = connectionParameters.timeout;
         
-        enum State_SU state = START;
+        enum State state = START;
         unsigned char byte;
         
         alarmEnabled = FALSE;
         alarmCount = 0;
         
-        while (nRetransmissions > 0) {
+        while (nRetransmissions >= 0) {
             writeToSerialPort(setFrame, SUFrame_SIZE, timeout, &nRetransmissions);
             
             state = START;
@@ -226,7 +250,7 @@ int llopen(LinkLayer connectionParameters)
     } else {
         printf("RX: Waiting for SET frame...\n");
         
-        enum State_SU state = START;
+        enum State state = START;
         unsigned char byte;
         
         while (state != STOP) {
@@ -289,10 +313,10 @@ int llwrite(const unsigned char *buf, int bufSize)
         return -1;
     }
     
-    int nRetransmissions = globalNRetransmissions;
+    int nRetransmissions = globalNRetransmissions -1;
     int timeout = globalTimeout;
 
-    enum State_SU state = START;
+    enum State state = START;
     unsigned char byte;
     unsigned char expectedRR = (Ns == 0) ? C_RR1 : C_RR0;
     
@@ -301,7 +325,7 @@ int llwrite(const unsigned char *buf, int bufSize)
     
     bool isREJ = false;
 
-    while (nRetransmissions > 0) {
+    while (nRetransmissions >= 0) {
         writeToSerialPort(frameTx, frameSize, timeout, &nRetransmissions);
         printf("TX: I-Frame sent (Ns=%d). Waiting for RR... (retries left: %d)\n", Ns, nRetransmissions);
         
@@ -379,7 +403,7 @@ int llwrite(const unsigned char *buf, int bufSize)
 
 int llread(unsigned char *packet)
 {
-    enum State_SU state = START;
+    enum State state = START;
     unsigned char byte;
 
     // Buffer to the payload (data) extracted into the I-Frame
@@ -540,16 +564,16 @@ int llclose()
         unsigned char discFrame[SUFrame_SIZE];
         buildSUFrame(discFrame, A_TX, C_DISC);
 
-        int nRetransmissions = globalNRetransmissions;
+        int nRetransmissions = globalNRetransmissions -1;
         int timeout = globalTimeout;
 
-        enum State_SU state = START;
+        enum State state = START;
         unsigned char byte;
 
         alarmEnabled = FALSE;
         alarmCount = 0;
         
-        while (nRetransmissions > 0) {
+        while (nRetransmissions >= 0) {
             writeToSerialPort(discFrame, SUFrame_SIZE, timeout, &nRetransmissions);
             printf("Tx: Disc ( SU Frame ) Sent\n");
             
@@ -622,7 +646,7 @@ int llclose()
     else{
         printf("RX: Waiting for DISC frame...\n");
         
-        enum State_SU state = START;
+        enum State state = START;
         unsigned char byte;
         
         while (state != STOP) {
@@ -705,7 +729,7 @@ int llclose()
 
         int isClosed = closeSerialPort();
         if (isClosed == 0){
-            printf("Tx: Connection terminated\n");
+            printf("RX: Connection terminated\n");
         }
         else{
             perror("Error closing SerialPort on Tx");
