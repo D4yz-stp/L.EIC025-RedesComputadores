@@ -7,6 +7,7 @@
 #include <stdlib.h> // strlen
 #include <sys/stat.h>
 #include <stdbool.h>
+#include "statistics.h"
 
 // Control packet types
 #define C_START 1
@@ -73,6 +74,8 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     
     if (correct_Open != -1) {
         // Connection established
+
+        initStatistics();
 
         if (roleLink == LlTx) {
             /*
@@ -175,6 +178,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                 error = TRUE;
             }
             printf("TX: End Control Packet sent\n");
+
+            stats.totalDataBytes = bytesSum;
+            printStatistics("TRANSMITTER");
 
             fclose(file);
             if (llclose() < 0) {
@@ -327,12 +333,19 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                         else if (bytesReceived != fileSize) {
                             printf("RX: ERROR -> Bytes received (%lld) != expected (%lld)\n", bytesReceived, fileSize);
                             error = TRUE;
-                        } 
+                        }
+
+                        stats.totalDataBytes = bytesReceived;
+
+                        /*
                         printf("\n========================================\n\n");
                         printf("RX: File donwloaded with sucess\n");
                         printf("RX: Total bytes: %lld\n", bytesReceived);
                         printf("RX: Data packets: %d\n", sequenceNumber);
                         printf("\n========================================\n\n");
+                        */
+                       
+                        printStatistics("RECEIVER");
 
                         transferComplete = TRUE; 
                         if (llclose() < 0) {

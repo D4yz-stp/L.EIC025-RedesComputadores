@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <string.h>
 #include "alarm_sigaction.h"
+#include "statistics.h"
+
 
 #define SUFrame_SIZE 5
 #define I_HEADER_SIZE 4
@@ -313,6 +315,8 @@ int llwrite(const unsigned char *buf, int bufSize)
         return -1;
     }
     
+    stats.framesTransmitted++;
+
     int nRetransmissions = globalNRetransmissions -1;
     int timeout = globalTimeout;
 
@@ -324,7 +328,6 @@ int llwrite(const unsigned char *buf, int bufSize)
     alarmCount = 0;
     
     bool isREJ = false;
-
     while (nRetransmissions >= 0) {
         writeToSerialPort(frameTx, frameSize, timeout, &nRetransmissions);
         printf("TX: I-Frame sent (Ns=%d). Waiting for RR... (retries left: %d)\n", Ns, nRetransmissions);
@@ -387,8 +390,16 @@ int llwrite(const unsigned char *buf, int bufSize)
         
         if (!alarmEnabled) {
             nRetransmissions--;
-            if (isREJ) printf("TX: REJ received — retransmitting frame.\n");
-            else printf("TX: Timeout — retransmitting frame.\n");
+            if (isREJ) {
+                printf("TX: REJ received — retransmitting frame.\n");
+                stats.rejReceived++;
+                stats.framesRetransmitted++;
+            }
+            else {
+                printf("TX: Timeout — retransmitting frame.\n");
+                stats.timeouts++; 
+                stats.framesRetransmitted++; 
+            }
             isREJ = FALSE;
         }
     }
@@ -440,6 +451,7 @@ int llread(unsigned char *packet)
                         // Verification to see if its the awaited I-frame (C_I0 ou C_I1)
                         if (currentC == 0x00 || currentC == 0x80) {
                             if (currentC != expectedC) {
+                                stats.duplicateFrames++;
                                 // Duplicated Frame
                                 printf("RX: Duplicate frame detected (got %s, expected %s)\n",
                                     currentC == 0x00 ? "I0" : "I1",
@@ -486,6 +498,7 @@ int llread(unsigned char *packet)
                         }
                         
                         if (receivedBCC2 == calculatedBCC2) {
+                            stats.framesReceivedCorrectly++;
                             // Valid data
                             memcpy(packet, dataBuffer, dataIdx);
                             
@@ -503,6 +516,8 @@ int llread(unsigned char *packet)
                             Nr = (Nr == 0) ? 1:0;
                             return dataIdx;
                         } else {
+                            stats.bcc2Errors++;
+                            stats.rejSent++;
                             unsigned char rejFrame[SUFrame_SIZE];
                             unsigned char rejControl = (Nr == 0) ? C_REJ0 : C_REJ1;
                             buildSUFrame(rejFrame, A_RX, rejControl);
