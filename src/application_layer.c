@@ -17,6 +17,25 @@
 #define T_FILE_SIZE 0
 #define T_FILE_NAME 1
 
+// =================================================================
+// Packet Construction Functions
+// =================================================================
+
+/**
+ * @brief Builds a START or END control packet.
+ *
+ * This function constructs an application layer control packet (Type I).
+ * The packet structure is: C (1 byte) | TLV_SIZE | TLV_FILENAME
+ * TLV_SIZE structure: T (1 byte: T_FILE_SIZE) | L (1 byte: 8) | V (8 bytes: fileSize)
+ * TLV_FILENAME structure: T (1 byte: T_FILE_NAME) | L (1 byte: filename length) | V (N bytes: filename string)
+ *
+ * @param packet Pointer to the buffer where the packet will be constructed.
+ * @param controlType Type of the control packet (C_START or C_END).
+ * @param filename The name of the file being transferred.
+ * @param fileSize The total size of the file in bytes.
+ * @return The total size of the constructed control packet.
+ */
+
 int buildControlPacket( unsigned char *packet, unsigned char controlType, const char *filename, long long fileSize)
 {
     int index = 0;
@@ -37,6 +56,19 @@ int buildControlPacket( unsigned char *packet, unsigned char controlType, const 
 
 }
 
+/**
+ * @brief Builds a data packet.
+ *
+ * This function constructs an application layer data packet (Type II).
+ * The packet structure is: C (1 byte) | L2 (1 byte) | L1 (1 byte) | Data (K bytes)
+ * The data size K is represented by L = L2*256 + L1.
+ *
+ * @param packet Pointer to the buffer where the packet will be constructed.
+ * @param data Pointer to the raw file data to be encapsulated.
+ * @param dataSize The size of the raw data (K).
+ * @return The total size of the constructed data packet (3 + K).
+ */
+
 int buildDataPacket(unsigned char *packet, unsigned char *data, int dataSize) {
     packet[0] = C_DATA;
 
@@ -49,6 +81,25 @@ int buildDataPacket(unsigned char *packet, unsigned char *data, int dataSize) {
     
     return 3 + dataSize; 
 }
+
+// =================================================================
+// Main Application Logic
+// =================================================================
+
+/**
+ * @brief Executes the file transfer process based on the specified role (TX or RX).
+ *
+ * This function sets up the link layer, establishes a connection (llopen),
+ * handles the file transfer (sending or receiving data and control packets),
+ * logs statistics, and closes the connection (llclose).
+ *
+ * @param serialPort The serial port name (e.g., "/dev/ttyS0").
+ * @param role The role: "tx" (Transmitter) or "rx" (Receiver).
+ * @param baudRate The serial communication speed.
+ * @param nTries The number of retransmissions allowed.
+ * @param timeout The timeout for retransmissions in seconds.
+ * @param filename The path to the file to send (TX) or the expected filename (RX - though the code logic uses the filename from the START packet).
+ */
 
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
@@ -78,6 +129,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         initStatistics();
 
         if (roleLink == LlTx) {
+// =====================================================
+// TRANSMITTER LOGIC
+// =====================================================           
             /*
                 Opening the File
             */
@@ -191,6 +245,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
         } 
         else {
+// =====================================================
+// RECEIVER LOGIC
+// =====================================================
             unsigned char packet[MAX_PAYLOAD_SIZE];
             FILE *file = NULL;
             long long int fileSize = 0;

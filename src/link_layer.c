@@ -47,26 +47,33 @@ static LinkLayerRole globalRole;
 static int globalTimeout;
 static int globalNRetransmissions;
 
-/*
-    State machine for both S/U Frames and I-Frames
+// =================================================================
+// State Machine for Frame Reception
+// =================================================================
 
-    For S/U Frames (SET, UA, DISC, RR, REJ):
-    START → FLAG_RCV → A_RCV → C_RCV → BCC1_OK → STOP
-    Structure: F | A | C | BCC1 | F
-    For I-Frames (Information frames with payload):
-    START → FLAG_RCV → A_RCV → C_RCV → BCC1_OK → STOP
-    Structure: F | A | C | BCC1 | DATA | BCC2 | F
-    Note: BCC1_OK state handles both BCC1 validation AND data reception (payload + BCC2)
-    When receiving data, the state remains in BCC1_OK until the closing FLAG is found,
-    processing each byte (with destuffing) and accumulating it in the data buffer.
-*/
+/*
+ * State machine used for receiving both S/U Frames (F|A|C|BCC1|F) and I-Frames (F|A|C|BCC1|DATA|BCC2|F).
+ * - START, FLAG_RCV, A_RCV, C_RCV verify the header structure.
+ * - BCC1_OK confirms the BCC1 validity and then handles the reception of the variable-length payload (DATA + BCC2)
+ *   up to the closing FLAG.
+ */
 enum State{START, FLAG_RCV, A_RCV, C_RCV, BCC1_OK, STOP};
 
 
-//===============================================
-// BUILD FRAMES
-//===============================================
+// =================================================================
+// FRAME CONSTRUCTION FUNCTIONS
+// =================================================================
 
+/**
+ * @brief Builds a 5-byte Supervisory (S) or Unnumbered (U) frame.
+ *
+ * Frame structure: F | A | C | BCC1 | F
+ * BCC1 is calculated as A XOR C.
+ *
+ * @param frame Pointer to the buffer where the 5-byte frame will be stored.
+ * @param address The Address field (A_TX or A_RX).
+ * @param control The Control field (e.g., C_SET, C_UA, C_DISC, C_RRx, C_REJx).
+ */
 void buildSUFrame(unsigned char *frame, unsigned char address, unsigned char control)
 {
     frame[0] = FLAG;
@@ -75,6 +82,18 @@ void buildSUFrame(unsigned char *frame, unsigned char address, unsigned char con
     frame[3] = address ^ control;
     frame[4] = FLAG;
 }
+
+/**
+ * @brief Builds an Information (I) frame, including byte stuffing.
+ *
+ * Frame structure: F | A | C | BCC1 | Data (stuffed) | BCC2 (stuffed) | F
+ * C field is set based on the current sequence number Ns (C_I0 or C_I1).
+ *
+ * @param frame Pointer to the output buffer (must be large enough for stuffing).
+ * @param data Pointer to the raw application layer payload.
+ * @param dataSize Size of the raw payload.
+ * @return The total size of the constructed I-frame, or -1 on failure.
+ */
 
 int buildIFrame(unsigned char *frame, const unsigned char *data, int dataSize)
 {
@@ -115,9 +134,22 @@ int buildIFrame(unsigned char *frame, const unsigned char *data, int dataSize)
     return idx;
 }
 
-//===============================================
-// WRITE TO SERIAL PORT WITH ALARM
-//===============================================
+// =================================================================
+// SERIAL PORT WRITE WITH ALARM/RETRANSMISSION
+// =================================================================
+
+/**
+ * @brief Writes a frame to the serial port and sets the retransmission alarm.
+ *
+ * This function only sends the frame if the alarm is not already enabled (i.e.,
+ * if we're not waiting for an acknowledgment).
+ *
+ * @param frame The frame to send.
+ * @param frameSize The size of the frame.
+ * @param timeout The timeout value in seconds.
+ * @param nRetransmissions Pointer to the retransmission counter (decremented externally upon timeout).
+ * @return 0 on success, -1 on fatal error (max retransmissions reached or write failure).
+ */
 
 int writeToSerialPort(unsigned char *frame, int frameSize, int timeout, int *nRetransmissions)
 {
@@ -146,9 +178,16 @@ int writeToSerialPort(unsigned char *frame, int frameSize, int timeout, int *nRe
 }
 
 //===============================================
-// Calcula o BCC2
+// UTILITY FUNCTION
 //===============================================
 
+/**
+ * @brief Calculates the Block Check Character (BCC2) by XORing all data bytes.
+ *
+ * @param data Pointer to the data payload.
+ * @param dataSize Size of the data payload.
+ * @return The calculated BCC2 byte.
+ */
 unsigned char calculateBCC2(const unsigned char *data, int dataSize) {
     unsigned char bcc2 = 0;
     for (int i = 0; i < dataSize; i++) {
@@ -158,8 +197,17 @@ unsigned char calculateBCC2(const unsigned char *data, int dataSize) {
 }
 
 //===============================================
-// LLOPEN
+// LLOPEN (Connection Setup)
 //===============================================
+
+/**
+ * @brief Establishes the connection at the link layer.
+ *
+ * Implements the HDLC SABM/UA exchange (three-wire handshake).
+ *
+ * @param connectionParameters LinkLayer structure containing role, port, etc.
+ * @return File descriptor (fd) on success, -1 on failure.
+ */
 
 int llopen(LinkLayer connectionParameters)
 {
@@ -303,9 +351,18 @@ int llopen(LinkLayer connectionParameters)
 }
 
 //===============================================
-// LLWRITE
+// LLWRITE (Data Transmission)
 //===============================================
 
+/**
+ * @brief Transmits an Information (I) frame containing the application layer data.
+ *
+ * Implements Stop-and-Wait ARQ logic with retransmissions on timeout or REJ.
+ *
+ * @param buf Pointer to the raw application layer data payload.
+ * @param bufSize Size of the payload.
+ * @return The number of bytes successfully written (bufSize), or -1 on failure.
+ */
 int llwrite(const unsigned char *buf, int bufSize)
 {
     unsigned char frameTx[MAX_PAYLOAD_SIZE * 2 + 10];
@@ -409,9 +466,18 @@ int llwrite(const unsigned char *buf, int bufSize)
 }
 
 //===============================================
-// LLREAD
+// LLREAD (Data Reception)
 //===============================================
 
+/**
+ * @brief Reads an Information (I) frame from the serial port and extracts the payload.
+ *
+ * Implements a state machine to receive the frame, performs destuffing, and checks BCC2.
+ * Sends RR upon success or REJ upon error/duplicate frame detection.
+ *
+ * @param packet Pointer to the buffer where the application layer payload will be stored.
+ * @return The size of the extracted payload on success, or -1 on failure.
+ */
 int llread(unsigned char *packet)
 {
     enum State state = START;
@@ -564,14 +630,16 @@ int llread(unsigned char *packet)
 }
 
 //===============================================
-// LLCLOSE
+// LLCLOSE (Connection Teardown)
 //===============================================
 
-/*
-    globalRole = connectionParameters.role;
-    globalTimeout = connectionParameters.timeout;
-    globalNRetransmissions = connectionParameters.nRetransmissions;
-*/
+/**
+ * @brief Closes the connection at the link layer.
+ *
+ * Implements the HDLC DISC/DISC/UA exchange.
+ *
+ * @return 0 on successful closure, -1 on failure.
+ */
 int llclose()
 {
     if( globalRole == LlTx ){

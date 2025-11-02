@@ -4,7 +4,12 @@
 #include <sys/time.h>
 
 Statistics stats;
-
+/**
+ * @brief Initializes the global statistics structure.
+ *
+ * This function sets all fields of the 'stats' structure to zero and
+ * records the starting time for the data transfer.
+ */
 void initStatistics() {
     memset(&stats, 0, sizeof(Statistics));
     
@@ -12,14 +17,27 @@ void initStatistics() {
     gettimeofday(&tv, NULL);
     stats.startTime = tv.tv_sec + tv.tv_usec / 1000000.0;
 }
-
+/**
+ * @brief Calculates the data transfer throughput.
+ *
+ * Calculated as (Total Data Bytes * 8 bits/byte) / Elapsed Time in seconds.
+ *
+ * @return Throughput in bits per second (bps).
+ */
 double calculateThroughput() {
     if (stats.endTime <= stats.startTime) return 0.0;
     
     double elapsedTime = stats.endTime - stats.startTime;
     return (stats.totalDataBytes * 8.0) / elapsedTime; // bits per second
 }
-
+/**
+ * @brief Calculates final metrics and prints a formatted report to stdout.
+ *
+ * Records the end time, calculates throughput, and presents frame, error,
+ * and retransmission statistics.
+ *
+ * @param role The role string ("TRANSMITTER" or "RECEIVER") for the report title.
+ */
 void printStatistics(const char* role) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
