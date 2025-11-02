@@ -36,5 +36,6 @@ extern Statistics stats;
 void initStatistics();
 void printStatistics(const char* role);
 double calculateThroughput();
+double calculateFER();
 
 #endif

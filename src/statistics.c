@@ -30,10 +30,29 @@ double calculateThroughput() {
     double elapsedTime = stats.endTime - stats.startTime;
     return (stats.totalDataBytes * 8.0) / elapsedTime; // bits per second
 }
+ /**
+ * @brief Calculates the Frame Error Rate (FER).
+ *
+ * FER = (Total Error Frames) / (Total Frames Received)
+ *
+ * @return Frame Error Rate as a value between 0.0 and 1.0.
+ */
+double calculateFER() {
+    int totalFramesReceived = stats.framesReceivedCorrectly + 
+                              stats.bcc1Errors + 
+                              stats.bcc2Errors + 
+                              stats.duplicateFrames;
+    
+    if (totalFramesReceived == 0) return 0.0;
+    
+    int totalErrorFrames = stats.bcc1Errors + stats.bcc2Errors + stats.duplicateFrames;
+    return (double)totalErrorFrames / totalFramesReceived;
+}
+
 /**
  * @brief Calculates final metrics and prints a formatted report to stdout.
  *
- * Records the end time, calculates throughput, and presents frame, error,
+ * Records the end time, calculates throughput, FER, and presents frame, error,
  * and retransmission statistics.
  *
  * @param role The role string ("TRANSMITTER" or "RECEIVER") for the report title.
@@ -43,39 +62,52 @@ void printStatistics(const char* role) {
     gettimeofday(&tv, NULL);
     stats.endTime = tv.tv_sec + tv.tv_usec / 1000000.0;
     
-    printf("\n========================================\n");
+    double throughput = calculateThroughput();
+    double fer = calculateFER();
+    
+    printf("\n========================================\n\n");
     printf("        PROTOCOL STATISTICS (%s)\n", role);
-    printf("========================================\n\n");
+    printf("\n========================================\n\n");
     
     printf("DATA TRANSFER:\n");
     printf("  Total data bytes: %lld\n", stats.totalDataBytes);
-    printf("  Transfer time: %.2f seconds\n", stats.endTime - stats.startTime);
+    printf("  Transfer time: %.3f seconds\n", stats.endTime - stats.startTime);
     printf("  Throughput: %.2f bits/s (%.2f KB/s)\n", 
-           calculateThroughput(), 
-           calculateThroughput() / 8192.0);
+           throughput, 
+           throughput / 8192.0);
     
     printf("\nFRAME STATISTICS:\n");
     printf("  Frames transmitted: %d\n", stats.framesTransmitted);
     printf("  Frames received correctly: %d\n", stats.framesReceivedCorrectly);
     
-    if (stats.framesTransmitted > 0) {
+    int totalFramesReceived = stats.framesReceivedCorrectly + 
+        stats.bcc1Errors + 
+        stats.bcc2Errors + 
+        stats.duplicateFrames;
+    if (totalFramesReceived > 0) {
+        printf("  Total frames received: %d\n", totalFramesReceived);
         printf("  Success rate: %.2f%%\n", 
-               (stats.framesReceivedCorrectly * 100.0) / stats.framesTransmitted);
+               (stats.framesReceivedCorrectly * 100.0) / totalFramesReceived);
     }
     
+    if (stats.framesTransmitted > 0) {
+        printf("  Frame Error Rate (FER): %.4f (%.2f%%)\n", fer, fer * 100.0);
+    }
     printf("\nERRORS & RETRANSMISSIONS:\n");
+    printf("  Total error frames: %d\n", 
+           stats.bcc1Errors + stats.bcc2Errors + stats.duplicateFrames);
+    printf("    - BCC1 errors: %d\n", stats.bcc1Errors);
+    printf("    - BCC2 errors: %d\n", stats.bcc2Errors);
+    printf("    - Duplicate frames: %d\n", stats.duplicateFrames);
     printf("  Frames retransmitted: %d\n", stats.framesRetransmitted);
     printf("  Timeouts: %d\n", stats.timeouts);
     printf("  REJ sent: %d\n", stats.rejSent);
     printf("  REJ received: %d\n", stats.rejReceived);
-    printf("  Duplicate frames: %d\n", stats.duplicateFrames);
-    printf("  BCC1 errors: %d\n", stats.bcc1Errors);
-    printf("  BCC2 errors: %d\n", stats.bcc2Errors);
-    
+
     if (stats.framesTransmitted > 0) {
         printf("  Retransmission rate: %.2f%%\n", 
                (stats.framesRetransmitted * 100.0) / stats.framesTransmitted);
     }
-    
+
     printf("\n========================================\n\n");
 }
