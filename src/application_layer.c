@@ -337,6 +337,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
                         stats.totalDataBytes = bytesReceived;
 
+                        printf("RX: File donwloaded with sucess\n");
                         /*
                         printf("\n========================================\n\n");
                         printf("RX: File donwloaded with sucess\n");
