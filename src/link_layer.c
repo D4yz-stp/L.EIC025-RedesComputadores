@@ -380,6 +380,7 @@ int llwrite(const unsigned char *buf, int bufSize)
     enum State state = START;
     unsigned char byte;
     unsigned char expectedRR = (Ns == 0) ? C_RR1 : C_RR0;
+    unsigned char nexpectedRR = (Ns == 0) ? C_RR1 : C_RR0;
     
     alarmEnabled = FALSE;
     alarmCount = 0;
@@ -406,6 +407,14 @@ int llwrite(const unsigned char *buf, int bufSize)
                         else if (byte == expectedRR) {
                             isREJ = FALSE;
                             state = C_RCV;
+                        }
+                        else if (byte == nexpectedRR) {
+                            state = STOP;
+                            alarm(0);
+                            alarmEnabled = FALSE;
+                            printf("TX: RR received. Duplicated Frame acknowledged.\n");
+                            Ns = 1 - Ns;
+                            return bufSize;
                         }
                         else if (byte == C_REJ0 || byte == C_REJ1) {
                             isREJ = TRUE;
